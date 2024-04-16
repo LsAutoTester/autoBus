@@ -29,7 +29,7 @@
       }
     },
     "cskBurn":{
-      "burnPort": "COM5",
+      "burnPort": "COM6",
       "baudRate": 115200,
       "pinNum": 8,
       "ap":{

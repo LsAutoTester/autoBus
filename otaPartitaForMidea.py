@@ -258,7 +258,7 @@ class crazyOTA:
         # 如果本地调试需要替换到本地的文件夹,挂载格式如下，更换本地只需更换Firmware前的目录即可。
         # Z:\Firmware\Midea_Offline_CSK6011B_WB01\1.0.26\fw.img
         # Z:\Firmware\Midea_Offline_CSK6011B_WB01\1.0.26\asr.bin
-        self.mntFolder = r"Z:\Firmware"
+        self.mntFolder = r"z:\\Firmware"
         mnt_cmdInfoFile = os.path.join(self.mntFolder, 'otaTestInfo.json')
         self.cmdInfoFile = os.path.join(self.configFolder, 'otaTestInfo.json')
         if fileIsExists(mnt_cmdInfoFile):
@@ -309,7 +309,7 @@ class crazyOTA:
         # asr 烧录信息
         self.asrBurnInfo = self.deviceListInfo.get("asrLog", {})
         # 复制挂载目录下的烧录文件
-        self.asrBurnFile = os.path.join(self.burnFolder, "asr.bin")
+        self.asrBurnFile = os.path.join(self.burnFolder, r"asr.bin")
         mnt_cskBurnFile = os.path.join(self.mntFolder, self.testProject, f"V{self.burnVersion}", "asr.bin")
         if fileIsExists(mnt_cskBurnFile):
             shutil.copy2(mnt_cskBurnFile, self.asrBurnFile)
