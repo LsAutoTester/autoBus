@@ -249,6 +249,8 @@ class crazyOTA:
         # 初始化设备参数
         self.projectInfo = self.config.get("projectInfo", "")
         self.deviceListInfo = self.config.get("deviceListInfo", {})
+        self.configFolder = os.path.join(os.getcwd(), 'config')
+
         # self.cskCmdList = self.config.get("cskCmdList", {})
         # self.asrCmdList = self.config.get("asrCmdList", {})
         # 需要本地pc连接iflytek-yycs网络，然后挂载\\Desktop-r4vrmhp\d 到本地记将挂载的网络磁盘记为Z，
@@ -257,7 +259,10 @@ class crazyOTA:
         # Z:\Firmware\Midea_Offline_CSK6011B_WB01\1.0.26\fw.img
         # Z:\Firmware\Midea_Offline_CSK6011B_WB01\1.0.26\asr.bin
         self.mntFolder = r"Z:\Firmware"
-        self.cmdInfoFile = os.path.join(self.mntFolder, 'otaTestInfo.json')
+        mnt_cmdInfoFile = os.path.join(self.mntFolder, 'otaTestInfo.json')
+        self.cmdInfoFile = os.path.join(self.configFolder, 'otaTestInfo.json')
+        if fileIsExists(mnt_cmdInfoFile):
+            shutil.copy2(mnt_cmdInfoFile, self.cmdInfoFile)
         if not fileIsExists(self.cmdInfoFile):
             return
         self.otaInfo = load_json(self.cmdInfoFile)
@@ -274,6 +279,9 @@ class crazyOTA:
         self.otaVersion = self.testArgs.otaVersion
         self.mideaOtaInfo = self.otaInfo.get("mideaOtaInfo", {})
         self.otaCmd = self.mideaOtaInfo.get(self.otaVersion, "")
+
+        self.burnFolder = os.path.join(self.configFolder, self.testProject, f"V{self.burnVersion}")
+        createdirs(self.burnFolder)
         if not self.otaCmd:
             print(f"请检查{self.cmdInfoFile} 文件是否存在{self.otaVersion} 版本的ota升级命令。")
             print(f"如非jenkins平台执行此脚本，请在本地构建一个Firmware文件夹，详情询问bszheng")
@@ -290,17 +298,22 @@ class crazyOTA:
 
         # csk 烧录信息
         self.cskBurnInfo = self.deviceListInfo.get("cskBurn", {})
-        # 默认使用挂载目录下的烧录文件
-        # self.cskBurnFile = self.cskBurnInfo.get("cskBurnFile", "")
-        self.cskBurnFile = os.path.join(self.mntFolder, self.testProject, f"V{self.burnVersion}", "fw.img")
+        # 复制挂载目录下的烧录文件
+        self.cskBurnFile = os.path.join(self.burnFolder, "fw.img")
+        mnt_cskBurnFile = os.path.join(self.mntFolder, self.testProject, f"V{self.burnVersion}", "fw.img")
+        if fileIsExists(mnt_cskBurnFile):
+            shutil.copy2(mnt_cskBurnFile, self.cskBurnFile)
 
         self.cskBootPinNum = self.cskBurnInfo.get("pinNum", 8)
         self.cskBurnPort = self.cskBurnInfo.get("burnPort", '')
         # asr 烧录信息
         self.asrBurnInfo = self.deviceListInfo.get("asrLog", {})
-        # 默认使用挂载目录下的烧录文件
-        # self.asrBurnFile = self.asrBurnInfo.get("asrBurnFile", "")
-        self.asrBurnFile = os.path.join(self.mntFolder, self.testProject, f"V{self.burnVersion}", "asr.bin")
+        # 复制挂载目录下的烧录文件
+        self.asrBurnFile = os.path.join(self.burnFolder, "asr.bin")
+        mnt_cskBurnFile = os.path.join(self.mntFolder, self.testProject, f"V{self.burnVersion}", "asr.bin")
+        if fileIsExists(mnt_cskBurnFile):
+            shutil.copy2(mnt_cskBurnFile, self.asrBurnFile)
+
         self.asrBootPinNum = self.asrBurnInfo.get("pinNum", 0)
         self.asrBurnPort = self.asrBurnInfo.get("port", '')
 
@@ -322,7 +335,7 @@ class crazyOTA:
         self.otaCmdSetDone = False
 
         if not fileIsExists(self.cskBurnFile) or not fileIsExists(self.asrBurnFile):
-            print(f"如非jenkins平台执行此脚本，请在本地构建一个Firmware文件夹，详情询问bszheng")
+            print(f"首先检查挂载目录是否有Firmware文件信息，再坚持本地config文件下是否有对应的烧录文件信息")
             return
 
     def initSerDevice(self):
