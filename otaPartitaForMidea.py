@@ -335,8 +335,8 @@ class crazyOTA:
         self.otaCmdSetDone = False
 
         if not fileIsExists(self.cskBurnFile) or not fileIsExists(self.asrBurnFile):
-            print(f"首先检查挂载目录是否有Firmware文件信息，再坚持本地config文件下是否有对应的烧录文件信息")
-            return
+            print(f"首先检查挂载目录是否有Firmware文件信息，再检查本地config文件下是否有对应的烧录文件信息")
+            sys.exit()
 
     def initSerDevice(self):
         # isDeviceInitDone = True
@@ -806,7 +806,6 @@ if __name__ == '__main__':
         showCurrentDev()
         sys.exit()
     deviceInfo = args.file
-    deviceInfo = "deviceInfo007.json"
     if os.path.isfile(deviceInfo):
         otaInfo = load_json(deviceInfo)
         otaRobot = crazyOTA(otaInfo, args)
