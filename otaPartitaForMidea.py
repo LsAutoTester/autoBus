@@ -1,20 +1,29 @@
+# -*- coding: utf-8 -*-
+__author__ = "bszheng"
+__date__ = "2024/4/6"
+__version__ = "1.0"
+
+import sys
+
+"""
+支持功能:
+1.脚本主要功能美的项目的设备自动烧录
+2.OTA升级过程中断网断电
+3.根据不同ota测试用例执行不同逻辑处理
+依赖工具或设备:
+1.pdu 继电器,主要用于设备断电
+2usb2xxx ，主要用于csk和wb01 的烧录引脚短接
+"""
 import argparse
 import datetime
-import os
 import re
 import subprocess
-import sys
-import time
 import traceback
 import threading
-import time
 import random
-
-from openpyxl.cell.cell import ILLEGAL_CHARACTERS_RE
-from common.Common_Func import get_serial
 from openpyxl.cell.cell import ILLEGAL_CHARACTERS_RE
 from common.output_log import output_log
-from common.Common_Func import get_serial, load_json, createdirs, generate_random_char, Random_time
+from common.Common_Func import get_serial, load_json, createdirs, fileIsExists
 import common.pdusnmp as pdu
 from common.USB2GPIO_Handle import *
 from common.usb_device import *
@@ -84,8 +93,6 @@ class serThread(threading.Thread):
             return
         for regexTag, regex in self.regexMap.items():
             if not regex:
-                # self.output.LOG_ERROR(f"{regexTag}的正则内容为空：{regex}\n")
-                # self.stop_flag = True
                 continue
             kw = re.match(regex, log_info)
             if kw:
@@ -98,7 +105,7 @@ class serThread(threading.Thread):
                         continue
                     self.output.LOG_INFO(f"\t{self.deviceName}: {regexTag}正则匹配结果：{get_kw}")
                 except Exception as e:
-                    self.output.LOG_INFO(f"{self.deviceName}的正则表达式{regex}匹配出错，出错信息{e}")
+                    self.output.LOG_ERROR(f"{self.deviceName}的正则表达式{regex}匹配出错，出错信息{e}")
 
     def getRegexResult(self):
         return self.regexResult
@@ -242,34 +249,58 @@ class crazyOTA:
         # 初始化设备参数
         self.projectInfo = self.config.get("projectInfo", "")
         self.deviceListInfo = self.config.get("deviceListInfo", {})
-        self.cskCmdList = self.config.get("cskCmdList", {})
-        self.asrCmdList = self.config.get("asrCmdList", {})
-
-        # 初始化本地结果数据保存目录
-        tempT = datetime.datetime.now()
-        timeTag = tempT.strftime("%Y-%m-%d_%H_%M_%S")
-        self.resultFolder = os.path.join(os.getcwd(), 'result', timeTag+ self.projectInfo)
-        createdirs(self.resultFolder)
-        self.output = output_log(1, self.resultFolder, timeTag )
-
+        # self.cskCmdList = self.config.get("cskCmdList", {})
+        # self.asrCmdList = self.config.get("asrCmdList", {})
+        # 需要本地pc连接iflytek-yycs网络，然后挂载\\Desktop-r4vrmhp\d 到本地记将挂载的网络磁盘记为Z，
+        # 烧录和升级的固件主要放在此挂载盘下的Firmware下，根据项目来分类。详情咨询bszheng.
+        # 如果本地调试需要替换到本地的文件夹,挂载格式如下，更换本地只需更换Firmware前的目录即可。
+        # Z:\Firmware\Midea_Offline_CSK6011B_WB01\1.0.26\fw.img
+        # Z:\Firmware\Midea_Offline_CSK6011B_WB01\1.0.26\asr.bin
+        self.mntFolder = r"Z:\Firmware"
+        self.cmdInfoFile = os.path.join(self.mntFolder, 'otaTestInfo.json')
+        if not fileIsExists(self.cmdInfoFile):
+            return
+        self.otaInfo = load_json(self.cmdInfoFile)
         # 测试信息
         self.cskInfoKey = "cskApLog"
         self.asrInfoKey = "asrLog"
         self.deviceListInfo = self.config.get("deviceListInfo", {})
-        self.otaType = self.config.get("otaType", {})
-        self.testType = self.config.get("testType", "")
-        self.flashClear = self.config.get("flashClear", 0)
         self.clearList = self.config.get("clearListAsr", 0)
         # args 外部传参的测试信息
         self.testType = self.testArgs.testType
+        self.testProject = self.testArgs.project
+        self.testLable = self.testArgs.lable
+        self.burnVersion = self.testArgs.version
+        self.otaVersion = self.testArgs.otaVersion
+        self.mideaOtaInfo = self.otaInfo.get("mideaOtaInfo", {})
+        self.otaCmd = self.mideaOtaInfo.get(self.otaVersion, "")
+        if not self.otaCmd:
+            print(f"请检查{self.cmdInfoFile} 文件是否存在{self.otaVersion} 版本的ota升级命令。")
+            print(f"如非jenkins平台执行此脚本，请在本地构建一个Firmware文件夹，详情询问bszheng")
+            sys.exit()
+        self.breakPower = self.testArgs.breakPower
+        self.flashClear = self.testArgs.flashClear
+
+        # 初始化本地结果数据保存目录
+        tempT = datetime.datetime.now()
+        timeTag = tempT.strftime("%Y-%m-%d_%H_%M_%S")
+        self.resultFolder = os.path.join(os.getcwd(), 'result', timeTag + self.projectInfo + self.testLable)
+        createdirs(self.resultFolder)
+        self.output = output_log(1, self.resultFolder, timeTag)
+
         # csk 烧录信息
         self.cskBurnInfo = self.deviceListInfo.get("cskBurn", {})
-        self.cskBurnFile = self.cskBurnInfo.get("cskBurnFile", "")
+        # 默认使用挂载目录下的烧录文件
+        # self.cskBurnFile = self.cskBurnInfo.get("cskBurnFile", "")
+        self.cskBurnFile = os.path.join(self.mntFolder, self.testProject, f"V{self.burnVersion}", "fw.img")
+
         self.cskBootPinNum = self.cskBurnInfo.get("pinNum", 8)
         self.cskBurnPort = self.cskBurnInfo.get("burnPort", '')
         # asr 烧录信息
         self.asrBurnInfo = self.deviceListInfo.get("asrLog", {})
-        self.asrBurnFile = self.asrBurnInfo.get("asrBurnFile", "")
+        # 默认使用挂载目录下的烧录文件
+        # self.asrBurnFile = self.asrBurnInfo.get("asrBurnFile", "")
+        self.asrBurnFile = os.path.join(self.mntFolder, self.testProject, f"V{self.burnVersion}", "asr.bin")
         self.asrBootPinNum = self.asrBurnInfo.get("pinNum", 0)
         self.asrBurnPort = self.asrBurnInfo.get("port", '')
 
@@ -289,6 +320,10 @@ class crazyOTA:
         self.serFpPools = {}
         self.otaTimes = 0
         self.otaCmdSetDone = False
+
+        if not fileIsExists(self.cskBurnFile) or not fileIsExists(self.asrBurnFile):
+            print(f"如非jenkins平台执行此脚本，请在本地构建一个Firmware文件夹，详情询问bszheng")
+            return
 
     def initSerDevice(self):
         # isDeviceInitDone = True
@@ -477,8 +512,7 @@ class crazyOTA:
 
     def asrBurn(self):
         burnNotDone = False
-        asrBurnTools = os.path.join(self.toolsFolder, "wb01Burn.exe")
-        # asrBurnTools = r"D:\JenkinsWork\autoBus\tools\ASR_downloader_V1.1.4_0312\ASR_downloader_V1.1.4\ASR_downloader_V1.1.4.exe"
+        asrBurnTools = os.path.join(self.toolsFolder, "ASR_downloader_V1.1.5", "ASR_downloader.exe")
         dlTag = 'welcome to download'
         burnTag = 'burn ok'
         verifyTag = 'crc done'
@@ -592,7 +626,7 @@ class crazyOTA:
         return not self.isNotBurnDone
 
     def upgrade(self, cskSerFp, asrSerFp, buildInfo, netWorkConnect):
-        otaCmd = self.otaType.get(buildInfo, "")
+        otaCmd = self.otaCmd
         if not otaCmd:
             self.output.LOG_ERROR(f"当前版本 {buildInfo},升级命令为空，请检查配置文件")
             return False
@@ -669,7 +703,7 @@ class crazyOTA:
                 else:
                     self.output.LOG_ERROR(f"当前版本烧录后asr信息匹配,进入ota升级")
                 buildInfo = cskSerFp.getRegexResult().get("buildInfo", '')
-                otaCmd = self.otaType.get("initOta", "")
+                otaCmd = self.otaCmd
                 if otaCmd == "burn":
                     runtimes += 1
                     continue
@@ -692,12 +726,13 @@ class crazyOTA:
                                 otaSetDone = True
 
                         if cskSerFp.getRegexResult().get("otaDownLoadDone", False):
-                            sleepTime = random.randint(10, 70)
-                            self.output.LOG_INFO(f'testTime {runtimes} : 等待{sleepTime}s 后重启设备')
-                            time.sleep(sleepTime)
-                            self.rebootDevice()
-                            otaTime -= sleepTime
-                            cskSerFp.cleanRegexResultBuff()
+                            if self.breakPower == 2:
+                                sleepTime = random.randint(10, 70)
+                                self.output.LOG_INFO(f'testTime {runtimes} : 等待{sleepTime}s 后重启设备')
+                                time.sleep(sleepTime)
+                                self.rebootDevice()
+                                otaTime -= sleepTime
+                                cskSerFp.cleanRegexResultBuff()
 
                         if cskSerFp.getRegexResult().get("otaDone", False):
                             self.output.LOG_INFO(f"升级完成，将{otaTime} 重置为10s，10后开始进入烧录")
@@ -745,15 +780,26 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description="获取外部参数库args")
     parser.add_argument('-f', "--file", type=str, default="", help="测试配置文件路径")
     parser.add_argument('-s', "--show", type=int, default=0, help="显示当前设备号,0:不显示,1:显示")
+    parser.add_argument('-p', "--project", type=str, default="Midea_Offline_CSK6011B_WB01", help="当前测试的类型")
+    parser.add_argument('-v', "--version", type=str, default="1.0.26", help="当前测试的类型")
     parser.add_argument('-t', "--testType", type=str, default="burnLOtaH", help="当前测试的类型")
+    parser.add_argument('-b', "--breakPower", type=int, default=0, help="当前随机断电阶段。0:不断电,1:下载断电,2:升级断电,3:下载断网,4:下载断电断网")
+    parser.add_argument('-c', "--flashClear", type=int, default=0, help="asr升级信息清除。0:不不清除,1:清除")
+    parser.add_argument('-o', "--otaVersion", type=str, default=r"1.0.45", help="当前测试的类型")
+    parser.add_argument('-l', "--lable", type=str, default="测试一下", help="当前测试的标注，标记当前的测试内容")
+
     args = parser.parse_args()
     if args.show:
         showCurrentDev()
         sys.exit()
-    run_json_file = args.file
-    if os.path.isfile(run_json_file):
-        otaInfo = load_json(run_json_file)
+    deviceInfo = args.file
+    deviceInfo = "deviceInfo007.json"
+    if os.path.isfile(deviceInfo):
+        otaInfo = load_json(deviceInfo)
         otaRobot = crazyOTA(otaInfo, args)
         otaRobot.run()
     else:
-        print("请输入正确的测试配置文件")
+        print(f"请输入正确的测试配置文件,当前配置文件不存在{deviceInfo}")
+    # filePath = os.path.join("Z:\\","Firmware","Midea_Offline_CSK6011B_WB01","V1.0.26",
+    # "Midea_Offline_WB01_3IN1_1.0.26.bin") filePath_ = os.path.join("Z:\\","Firmware","Midea_Offline_CSK6011B_WB01")
+    # shutil.copy(filePath,filePath_)

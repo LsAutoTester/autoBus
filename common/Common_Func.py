@@ -2,14 +2,14 @@
 import configparser
 import csv
 import json
-import os,re,sys
+import os, re, sys
 import string
 
-import pyaudio,wave
+import pyaudio, wave
 import urllib3
 import random
 
-#读配置文件
+# 读配置文件
 import serial
 
 import serial.tools.list_ports
@@ -30,10 +30,10 @@ def traversalFile(rootdir):
         for filename in file_name_list:
             if ".wav" in filename:
                 filelist.append(os.path.join(maindir, filename))
-    return filelist,subdirlist
+    return filelist, subdirlist
 
 
-#生成文件夹
+# 生成文件夹
 def createdirs(path):
     isExists = os.path.exists(path)  # 判断是否已存在目录
     if isExists == True:
@@ -41,33 +41,36 @@ def createdirs(path):
     else:
         os.makedirs(path)
 
-def get_Midea_log(debug,type,kw):
+
+def get_Midea_log(debug, type, kw):
     """
     获取日志中的关键字信息
     :return:
     """
-    #获取日志中的关键信息
+    # 获取日志中的关键信息
     local_info = ""
     if type == "adb":
-        local_info = debug.get_adbresult(kw,debug.read())
+        local_info = debug.get_adbresult(kw, debug.read())
     elif type == "串口":
-        local_info = debug.get_serialresult(kw,debug.read())
+        local_info = debug.get_serialresult(kw, debug.read())
     if local_info:
-        local_info = local_info.strip("[0m\n\"\x1b[K\rcnt = ")#去掉异常字符和换行符和双引号
+        local_info = local_info.strip("[0m\n\"\x1b[K\rcnt = ")  # 去掉异常字符和换行符和双引号
     return local_info
 
-#将拼音转为汉字
-def pinyin_to_hanzi(asrstr,pinyinjson):
+
+# 将拼音转为汉字
+def pinyin_to_hanzi(asrstr, pinyinjson):
     asr_get_info_chinese = asrstr
     if asrstr in pinyinjson["p_c"]:
         asr_get_info_chinese = pinyinjson["p_c"][asrstr]
     else:
         pass
-        #print(f"{asrstr}拼音不存在！")
+        # print(f"{asrstr}拼音不存在！")
     return asr_get_info_chinese
 
-#将离线tts的数字转为汉字
-def Num_to_hanzi(ttsNumlist,ttsjson):
+
+# 将离线tts的数字转为汉字
+def Num_to_hanzi(ttsNumlist, ttsjson):
     new_list = list()
     for ttsNum in ttsNumlist:
         if ttsNum in ttsjson:
@@ -103,7 +106,8 @@ def jiexi_testcase(testcase):
         # 程序直接退出
         sys.exit()
         # 解析结束
-    return wake_up_play_txt,playTxt,exceptTTS,except_Skill
+    return wake_up_play_txt, playTxt, exceptTTS, except_Skill
+
 
 def load_json(file):
     """
@@ -111,9 +115,10 @@ def load_json(file):
     :param file: file name
     :return: python dict
     """
-    with open(file, "r+",encoding="utf-8") as fp:
+    with open(file, "r+", encoding="utf-8") as fp:
         content = json.load(fp)
     return content
+
 
 def jsonToJsonFile(json_content, filename):
     """
@@ -126,8 +131,9 @@ def jsonToJsonFile(json_content, filename):
     with open(filename, 'w+', encoding='utf-8') as f:
         f.write(content)
 
+
 def check_serial():
-    #检测电脑连接的串口
+    # 检测电脑连接的串口
     serialName_list = list()
     plist = list(serial.tools.list_ports.comports())
     if len(plist) <= 0:
@@ -137,6 +143,7 @@ def check_serial():
             serialName = p[0]
             serialName_list.append(serialName)
     return serialName_list
+
 
 def Random_time(get_time):
     random_time = 1.0
@@ -151,7 +158,7 @@ def Random_time(get_time):
     return float(random_time)
 
 
-def get_serial(port, baudrate=115200,time_out=0.5):
+def get_serial(port, baudrate=115200, time_out=0.5):
     """
     实例化串口对象
     :param port: 串口名，如 "COM87"
@@ -166,13 +173,14 @@ def get_serial(port, baudrate=115200,time_out=0.5):
         #                         stopbits=serial.STOPBITS_ONE,
         #                         xonxoff=0,writeTimeout=1,
         #                         rtscts=0)  # /dev/ttyUSB0
-        serials = serial.Serial(port, baudrate,timeout=time_out)
+        serials = serial.Serial(port, baudrate, timeout=time_out)
 
     except Exception as e:
         print(f"串口连接出错，出错信息{e}")
     return serials
 
-def change_list_order(l,online):
+
+def change_list_order(l, online):
     if online:
         if len(l) >= 7:
             l.insert(0, l[-5])
@@ -202,11 +210,13 @@ def check_netconnect():
     except:
         return False
 
+
 def tryint(s):
-        try:
-            return int(s)
-        except ValueError:
-            return s
+    try:
+        return int(s)
+    except ValueError:
+        return s
+
 
 def str2int(v_str):  # 将元素中的字符串和数字分割开
     return [tryint(sub_str) for sub_str in re.split('([0-9]+)', v_str)]
@@ -215,10 +225,19 @@ def str2int(v_str):  # 将元素中的字符串和数字分割开
 def sort_humanly(v_list):  # 以分割后的list为单位进行排序
     return sorted(v_list, key=str2int)
 
+
 def generate_random_char():
     return random.choice(string.ascii_letters + string.digits)
 
-#print(Random_time("[1-5]"))
+
+def fileIsExists(file_path):
+    if os.path.exists(file_path):
+        return True
+    else:
+        print(f"{file_path} 文件不存在！")
+        return False
+
+# print(Random_time("[1-5]"))
 # random_char = generate_random_char()
 # print("随机字符：", random_char)
 #
