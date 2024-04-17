@@ -157,7 +157,7 @@ class usb2xxGpioHandle:
     def __init__(self, deviceNum, output):
         self.deviceNum = deviceNum
         self.output = output
-        self.resetRetry = 3
+        self.resetRetry = 10
 
     def dvOpen(self):
         # # wb01 的ser 脚。默认低电平，拉高进烧录

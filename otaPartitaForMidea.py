@@ -256,15 +256,16 @@ class crazyOTA:
         # 需要本地pc连接iflytek-yycs网络，然后挂载\\Desktop-r4vrmhp\d 到本地记将挂载的网络磁盘记为Z，
         # 烧录和升级的固件主要放在此挂载盘下的Firmware下，根据项目来分类。详情咨询bszheng.
         # 如果本地调试需要替换到本地的文件夹,挂载格式如下，更换本地只需更换Firmware前的目录即可。
-        # Z:\Firmware\Midea_Offline_CSK6011B_WB01\1.0.26\fw.img
-        # Z:\Firmware\Midea_Offline_CSK6011B_WB01\1.0.26\asr.bin
+        # z:\Firmware\Midea_Offline_CSK6011B_WB01\1.0.26\fw.img
+        # z:\Firmware\Midea_Offline_CSK6011B_WB01\1.0.26\asr.bin
         self.mntFolder = r"z:\\Firmware"
         mnt_cmdInfoFile = os.path.join(self.mntFolder, 'otaTestInfo.json')
         self.cmdInfoFile = os.path.join(self.configFolder, 'otaTestInfo.json')
         if fileIsExists(mnt_cmdInfoFile):
             shutil.copy2(mnt_cmdInfoFile, self.cmdInfoFile)
         if not fileIsExists(self.cmdInfoFile):
-            return
+            print(f"首先检查挂载目录是否有Firmware文件信息，再检查本地config文件下是否有对应的烧录文件信息")
+            sys.exit()
         self.otaInfo = load_json(self.cmdInfoFile)
         # 测试信息
         self.cskInfoKey = "cskApLog"
@@ -292,15 +293,15 @@ class crazyOTA:
         # 初始化本地结果数据保存目录
         tempT = datetime.datetime.now()
         timeTag = tempT.strftime("%Y-%m-%d_%H_%M_%S")
-        self.resultFolder = os.path.join(os.getcwd(), 'result', timeTag + self.projectInfo + self.testLable)
+        self.resultFolder = os.path.join(os.getcwd(), 'result', timeTag + self.projectInfo + "-" + self.testLable)
         createdirs(self.resultFolder)
         self.output = output_log(1, self.resultFolder, timeTag)
 
         # csk 烧录信息
         self.cskBurnInfo = self.deviceListInfo.get("cskBurn", {})
         # 复制挂载目录下的烧录文件
-        self.cskBurnFile = os.path.join(self.burnFolder, "fw.img")
-        mnt_cskBurnFile = os.path.join(self.mntFolder, self.testProject, f"V{self.burnVersion}", "fw.img")
+        self.cskBurnFile = os.path.join(self.burnFolder, f"fw.img")
+        mnt_cskBurnFile = os.path.join(self.mntFolder, self.testProject, f"V{self.burnVersion}", r"fw.img")
         if fileIsExists(mnt_cskBurnFile):
             shutil.copy2(mnt_cskBurnFile, self.cskBurnFile)
 
@@ -310,7 +311,7 @@ class crazyOTA:
         self.asrBurnInfo = self.deviceListInfo.get("asrLog", {})
         # 复制挂载目录下的烧录文件
         self.asrBurnFile = os.path.join(self.burnFolder, r"asr.bin")
-        mnt_cskBurnFile = os.path.join(self.mntFolder, self.testProject, f"V{self.burnVersion}", "asr.bin")
+        mnt_cskBurnFile = os.path.join(self.mntFolder, self.testProject, f"V{self.burnVersion}", r"asr.bin")
         if fileIsExists(mnt_cskBurnFile):
             shutil.copy2(mnt_cskBurnFile, self.asrBurnFile)
 
@@ -329,7 +330,6 @@ class crazyOTA:
 
         # 初始化脚本中使用到的变量
         self.toolsFolder = os.path.join(os.getcwd(), 'tools')
-        self.isNotBurnDone = True
         self.serFpPools = {}
         self.otaTimes = 0
         self.otaCmdSetDone = False
@@ -609,34 +609,47 @@ class crazyOTA:
         return otaCmdSetDone
 
     def burnFile(self, asrFpName, burnType="all"):
+        retry_times = 10
 
         self.output.LOG_INFO(f"进入烧录模式")
-        self.isNotBurnDone = False
         if not self.gpioHandle.dvOpen():
             input("当前usb2xxx设备初始化失败，请测试人员检查")
         if not self.inBoot():
-            self.isNotBurnDone = True
-            return self.isNotBurnDone
+            input("当前烧录模式进入失败，请测试人员检查")
+            self.inBoot()
         self.closeAsrSer(asrFpName)
         self.gpioHandle.resetRetry = 3
-        self.rebootDevice()
-        if burnType == "csk":
-            cskBurn = self.cskBurn()
-        elif burnType == "asr":
-            asrBurn = self.asrBurn()
-        else:
-            asrBurn = self.asrBurn()
-            cskBurn = self.cskBurn()
-            if not (asrBurn and cskBurn):
-                self.isNotBurnDone = True
+        cskBurnRes = False
+        asrBurnRes = False
+        while retry_times > 0:
+            self.rebootDevice()
+            if burnType == "csk" and not cskBurnRes:
+                cskBurnRes = self.cskBurn()
+            elif burnType == "asr" and not asrBurnRes:
+                asrBurnRes = self.asrBurn()
+            else:
+                if not asrBurnRes:
+                    asrBurnRes = self.asrBurn()
+                if not cskBurnRes:
+                    cskBurnRes = self.cskBurn()
+            if cskBurnRes and asrBurnRes:
+                break
+            retry_times -= 1
+            self.output.LOG_INFO(f"当前烧录失败，还剩{retry_times}次重试")
+
+        if not (asrBurnRes and cskBurnRes):
+            self.clearSerThread()
+            self.output.LOG_ERROR(f"当前烧录固件失败，请检查设备")
+            raise EnvironmentError("当前烧录异常")
         if not self.outBoot():
-            self.isNotBurnDone = True
+            input("当前退出boot模式失败，请测试人员检查")
+            self.outBoot()
         # self.output.LOG_INFO(f"ota前的第 {self.otaTimes} 次烧录结果 {not self.isNotBurnDone}!!!")
         self.rebootDevice()
         time.sleep(0.1)
         if not self.initSerDevice():
             input("当前设备初始化失败，请测试人员检查")
-        return not self.isNotBurnDone
+        return True
 
     def upgrade(self, cskSerFp, asrSerFp, buildInfo, netWorkConnect):
         otaCmd = self.otaCmd
