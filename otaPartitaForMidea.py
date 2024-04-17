@@ -724,10 +724,6 @@ class crazyOTA:
                 cskInfo = cskSerFp.getRegexResult().get("buildInfo", '')
                 self.output.LOG_ERROR(f"烧录后 asr 版本信息 :{asrInfo}")
                 self.output.LOG_ERROR(f"烧录后 csk 版本信息 :{cskInfo}")
-                if asrInfo == "3afcdd5d":
-                    self.output.LOG_ERROR(f"当前版本烧录后asr信息不匹配")
-                else:
-                    self.output.LOG_ERROR(f"当前版本烧录后asr信息匹配,进入ota升级")
                 buildInfo = cskSerFp.getRegexResult().get("buildInfo", '')
                 otaCmd = self.otaCmd
                 if otaCmd == "burn":
