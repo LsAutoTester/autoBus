@@ -4,6 +4,7 @@ __date__ = "2024/4/6"
 __version__ = "1.0"
 
 import sys
+import time
 
 """
 支持功能:
@@ -249,20 +250,12 @@ class crazyOTA:
         # 初始化设备参数
         self.projectInfo = self.config.get("projectInfo", "")
         self.deviceListInfo = self.config.get("deviceListInfo", {})
-        self.configFolder = os.path.join(os.getcwd(), 'config')
+        self.configFolder = os.path.join(os.getcwd(), 'config', 'Firmware')
 
         # self.cskCmdList = self.config.get("cskCmdList", {})
         # self.asrCmdList = self.config.get("asrCmdList", {})
-        # 需要本地pc连接iflytek-yycs网络，然后挂载\\Desktop-r4vrmhp\d 到本地记将挂载的网络磁盘记为Z，
-        # 烧录和升级的固件主要放在此挂载盘下的Firmware下，根据项目来分类。详情咨询bszheng.
-        # 如果本地调试需要替换到本地的文件夹,挂载格式如下，更换本地只需更换Firmware前的目录即可。
-        # z:\Firmware\Midea_Offline_CSK6011B_WB01\1.0.26\fw.img
-        # z:\Firmware\Midea_Offline_CSK6011B_WB01\1.0.26\asr.bin
-        self.mntFolder = r"z:\\Firmware"
-        mnt_cmdInfoFile = os.path.join(self.mntFolder, 'otaTestInfo.json')
+
         self.cmdInfoFile = os.path.join(self.configFolder, 'otaTestInfo.json')
-        if fileIsExists(mnt_cmdInfoFile):
-            shutil.copy2(mnt_cmdInfoFile, self.cmdInfoFile)
         if not fileIsExists(self.cmdInfoFile):
             print(f"首先检查挂载目录是否有Firmware文件信息，再检查本地config文件下是否有对应的烧录文件信息")
             sys.exit()
@@ -282,7 +275,7 @@ class crazyOTA:
         self.otaCmd = self.mideaOtaInfo.get(self.otaVersion, "")
 
         self.burnFolder = os.path.join(self.configFolder, self.testProject, f"V{self.burnVersion}")
-        createdirs(self.burnFolder)
+        # createdirs(self.burnFolder)
         if not self.otaCmd:
             print(f"请检查{self.cmdInfoFile} 文件是否存在{self.otaVersion} 版本的ota升级命令。")
             print(f"如非jenkins平台执行此脚本，请在本地构建一个Firmware文件夹，详情询问bszheng")
@@ -301,20 +294,12 @@ class crazyOTA:
         self.cskBurnInfo = self.deviceListInfo.get("cskBurn", {})
         # 复制挂载目录下的烧录文件
         self.cskBurnFile = os.path.join(self.burnFolder, f"fw.img")
-        mnt_cskBurnFile = os.path.join(self.mntFolder, self.testProject, f"V{self.burnVersion}", r"fw.img")
-        if fileIsExists(mnt_cskBurnFile):
-            shutil.copy2(mnt_cskBurnFile, self.cskBurnFile)
-
         self.cskBootPinNum = self.cskBurnInfo.get("pinNum", 8)
         self.cskBurnPort = self.cskBurnInfo.get("burnPort", '')
         # asr 烧录信息
         self.asrBurnInfo = self.deviceListInfo.get("asrLog", {})
         # 复制挂载目录下的烧录文件
         self.asrBurnFile = os.path.join(self.burnFolder, r"asr.bin")
-        mnt_cskBurnFile = os.path.join(self.mntFolder, self.testProject, f"V{self.burnVersion}", r"asr.bin")
-        if fileIsExists(mnt_cskBurnFile):
-            shutil.copy2(mnt_cskBurnFile, self.asrBurnFile)
-
         self.asrBootPinNum = self.asrBurnInfo.get("pinNum", 0)
         self.asrBurnPort = self.asrBurnInfo.get("port", '')
 
@@ -681,6 +666,20 @@ class crazyOTA:
                     self.output.LOG_INFO(f'ota 命令下发成功')
                     return True
 
+    def onlyBurn(self):
+        self.output.LOG_INFO(f"当前测试类型为低版本升级到高版本，再烧录回低版本")
+        if not self.initSerDevice() or not self.gpioHandle.dvOpen():
+            self.output.LOG_ERROR(f"退出当前测试")
+        self.burnFile(self.asrInfoKey, "all")
+        time.sleep(10)
+        asrSerFp = self.serFpPools.get("asrLog", "")
+        cskSerFp = self.serFpPools.get("cskApLog", "")
+        self.cmdShell(cskSerFp, "version")
+        self.cmdShell(cskSerFp, f"flash.setloglev {4}")
+        self.cmdShell(cskSerFp, f"console 1")
+        time.sleep(2)
+        self.clearSerThread()
+
     def otaLoopSameAction(self):
         runtimes = 0
         self.output.LOG_INFO(f"当前测试类型为低版本升级到高版本，再烧录回低版本")
@@ -775,9 +774,9 @@ class crazyOTA:
 
     def run(self):
         try:
-            if self.testType == "burn":
+            if self.testType == "onlyBurn":
                 # 只烧录指定固件
-                pass
+                self.onlyBurn()
             elif self.testType == "burnLOtaH":
                 # 烧录指定固件，ota升级到目标固件
                 self.otaLoopSameAction()
@@ -803,11 +802,11 @@ if __name__ == '__main__':
     parser.add_argument('-f', "--file", type=str, default="", help="测试配置文件路径")
     parser.add_argument('-s', "--show", type=int, default=0, help="显示当前设备号,0:不显示,1:显示")
     parser.add_argument('-p', "--project", type=str, default="Midea_Offline_CSK6011B_WB01", help="当前测试的类型")
-    parser.add_argument('-v', "--version", type=str, default="1.0.26", help="当前测试的类型")
+    parser.add_argument('-v', "--version", type=str, default="1.0.49", help="当前测试的类型")
     parser.add_argument('-t', "--testType", type=str, default="burnLOtaH", help="当前测试的类型")
     parser.add_argument('-b', "--breakPower", type=int, default=0, help="当前随机断电阶段。0:不断电,1:下载断电,2:升级断电,3:下载断网,4:下载断电断网")
     parser.add_argument('-c', "--flashClear", type=int, default=0, help="asr升级信息清除。0:不不清除,1:清除")
-    parser.add_argument('-o', "--otaVersion", type=str, default=r"1.0.45", help="当前测试的类型")
+    parser.add_argument('-o', "--otaVersion", type=str, default=r"1.0.49", help="当前测试的类型")
     parser.add_argument('-l', "--lable", type=str, default="测试一下", help="当前测试的标注，标记当前的测试内容")
 
     args = parser.parse_args()
