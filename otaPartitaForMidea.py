@@ -2,10 +2,6 @@
 __author__ = "bszheng"
 __date__ = "2024/4/6"
 __version__ = "1.0"
-
-import sys
-import time
-
 """
 支持功能:
 1.脚本主要功能美的项目的设备自动烧录
@@ -88,6 +84,7 @@ class serThread(threading.Thread):
         self.serFp = ''
         self.stop_flag = False
         self.tempMsg = []
+        self.currentBootReasonList = []
 
     def regexMatch(self, log_info):
         if not self.regexMap:
@@ -104,6 +101,8 @@ class serThread(threading.Thread):
                     self.regexResult.update({regexTag: get_kw})
                     if regexTag == 'otaDownloadProgress':
                         continue
+                    if "Boot Reason" in regex:
+                        self.currentBootReasonList.append(get_kw)
                     self.output.LOG_INFO(f"\t{self.deviceName}: {regexTag}正则匹配结果：{get_kw}")
                 except Exception as e:
                     self.output.LOG_ERROR(f"{self.deviceName}的正则表达式{regex}匹配出错，出错信息{e}")
@@ -114,6 +113,16 @@ class serThread(threading.Thread):
     def cleanRegexResultBuff(self):
         self.output.LOG_INFO(f"清除 {self.deviceName}串口 RegexResultBuff 信息")
         self.regexResult = {key: False for key in self.regexMap}
+
+    def clearSingleRegex(self, regexKey):
+        self.output.LOG_INFO(f"清除 {self.deviceName}串口 {regexKey} 信息")
+        self.regexResult.update({regexKey: False})
+
+    def getBootReasonList(self):
+        return self.currentBootReasonList
+
+    def clearBootReasonList(self):
+        self.currentBootReasonList = []
 
     def serActive(self):
         self.serFp = get_serial(self.portNum, self.baudRate)
@@ -181,7 +190,12 @@ class serThread(threading.Thread):
             else:
                 while not self.stop_flag:
                     try:
+                        # num = self.serFp.inWaiting()
+                        # str_info = self.serFp.read(num)
                         str_info = self.serFp.readline()
+                        # if self.deviceName == "asrLog":
+                        #     print(str_info)
+                        #     print("==>:", str_info.decode('iso-8859-1'))
                         if str_info:
                             now_time = datetime.datetime.now()
                             b_info = bytes(f"[{now_time}]", encoding='utf-8') + str_info
@@ -189,6 +203,9 @@ class serThread(threading.Thread):
                             logfile.flush()
                             log_info = str_info.decode("utf-8", "ignore")  # 日志内存在不兼容的字符编码，加上ignore忽略异常
                             log_info = ILLEGAL_CHARACTERS_RE.sub('', log_info)  # 去掉非法字符
+                            # asr 获取csk数据时，大量的写操作，此处避免将这些数据进入正则
+                            if "lega_ota_write" in log_info:
+                                continue
                             self.tempMsg.append(b_info)
                             self.regexMatch(log_info)
                     except Exception as e:
@@ -546,31 +563,30 @@ class crazyOTA:
         self.pduPowerHandle(self.pduDeviceNum, True)
         self.output.LOG_INFO(f"设备硬重启完成")
 
-    def inBoot(self):
-        # 进入烧录模式
-        cskBoot = self.gpioHandle.setPinMaskPuPd(self.cskBootPinNum, 0)
-        time.sleep(0.2)
-        asrBoot = self.gpioHandle.setPinMaskPuPd(self.asrBootPinNum, 1)
-        if cskBoot and asrBoot:
-            return True
+    def bootControl(self, bootType):
+        if bootType == 'inBoot':
+            cskPinValue = 0
+            asrPinValue = 1
+        elif bootType == 'outBoot':
+            cskPinValue = 1
+            asrPinValue = 0
         else:
-            if self.gpioHandle.resetRetry == 0:
-                return False
-            self.gpioHandle.usb2xxReset()
-            self.inBoot()
-
-    def outBoot(self):
-        # 退出烧录模式
-        cskBoot = self.gpioHandle.setPinMaskPuPd(self.cskBootPinNum, 1)
-        time.sleep(0.2)
-        asrBoot = self.gpioHandle.setPinMaskPuPd(self.asrBootPinNum, 0)
-        if cskBoot and asrBoot:
-            return True
-        else:
-            if self.gpioHandle.resetRetry == 0:
-                return False
-            self.gpioHandle.usb2xxResetBoot()
-            self.outBoot()
+            self.output.LOG_INFO(f"当前boot类型为{bootType}，设置错误")
+            return False
+        retryTimes = 10
+        bootControlValue = False
+        self.output.LOG_INFO(f"当前boot类型为{bootType}，设置 cskPinValue：{cskPinValue}，设置 asrPinValue：{asrPinValue}")
+        while retryTimes > 0:
+            self.output.LOG_INFO(f"第 {10 - retryTimes} 次 控制引脚 {bootType} ")
+            cskBoot = self.gpioHandle.setOnePinMaskPuPd(self.cskBootPinNum, cskPinValue)
+            time.sleep(0.2)
+            asrBoot = self.gpioHandle.setOnePinMaskPuPd(self.asrBootPinNum, asrPinValue)
+            if cskBoot and asrBoot:
+                bootControlValue = True
+                break
+            retryTimes -= 1
+        self.output.LOG_INFO(f"第 {10 - retryTimes} 次 控制引脚 {bootType} : {bootControlValue}")
+        return bootControlValue
 
     def otaFile(self, cskSer, cmd, retryTimes=10):
         # ota命令下发，可指定重复次数，
@@ -599,9 +615,9 @@ class crazyOTA:
         self.output.LOG_INFO(f"进入烧录模式")
         if not self.gpioHandle.dvOpen():
             input("当前usb2xxx设备初始化失败，请测试人员检查")
-        if not self.inBoot():
+        if not self.bootControl("inBoot"):
             input("当前烧录模式进入失败，请测试人员检查")
-            self.inBoot()
+            self.bootControl("inBoot")
         self.closeAsrSer(asrFpName)
         self.gpioHandle.resetRetry = 3
         cskBurnRes = False
@@ -626,9 +642,9 @@ class crazyOTA:
             self.clearSerThread()
             self.output.LOG_ERROR(f"当前烧录固件失败，请检查设备")
             raise EnvironmentError("当前烧录异常")
-        if not self.outBoot():
+        if not self.bootControl("outBoot"):
             input("当前退出boot模式失败，请测试人员检查")
-            self.outBoot()
+            self.bootControl("outBoot")
         # self.output.LOG_INFO(f"ota前的第 {self.otaTimes} 次烧录结果 {not self.isNotBurnDone}!!!")
         self.rebootDevice()
         time.sleep(0.1)
@@ -680,17 +696,110 @@ class crazyOTA:
         time.sleep(2)
         self.clearSerThread()
 
+    def rebootThread(self, effectTime, cskSerFp, asrSerFp):
+        try:
+            self.output.LOG_INFO(f" {effectTime}s 后重启设备")
+            time.sleep(effectTime)
+            cskSerFp.cleanRegexResultBuff()
+            self.rebootDevice()
+        except Exception as e:
+            self.output.LOG_ERROR(f" 硬重启异常： {str(e)}")
+
+    def otaLoop(self):
+        runtimes = 0
+        self.output.LOG_INFO(f"当前测试类型为ota 升级自身循环")
+        if not self.initSerDevice():
+            self.output.LOG_ERROR(f"退出当前测试")
+        # 获取当前可用的串口句柄，可读取对应的串口数据、和配置文件中需要正则的内容
+        asrSerFp = self.serFpPools.get("asrLog", "")
+        cskSerFp = self.serFpPools.get("cskApLog", "")
+        self.cmdShell(asrSerFp, "listen flash setloglev 4")
+        otaCmd = self.otaCmd
+        while True:
+            otaStep = 0
+            try:
+                # 清除当前句柄里正则到的信息为空
+                cskSerFp.cleanRegexResultBuff()
+                asrSerFp.cleanRegexResultBuff()
+                self.output.LOG_INFO(f"\t\t^^^^^^^^^^CURRENT TESTTIMES {runtimes} START^^^^^^^^^^")
+                # 执行命令
+                self.cmdShell(asrSerFp, "listen flash show")
+                otaTime = 400
+                otaSetDone = False
+                cmdRetryTime = 0
+                cskRebootTimes = 0
+                breakPower = False
+                otaDone = False
+                while otaTime > 0:
+                    try:
+                        # 当ota 命令未设置成功或者重复次数少于20次继续设置ota的升级命令
+                        if not otaSetDone and cmdRetryTime < 20:
+                            cmdRetryTime += 1
+                            self.cmdShell(cskSerFp, "version")
+                            self.cmdShell(cskSerFp, f"flash.setloglev {4}")
+                            self.cmdShell(cskSerFp, f"console 1")
+                            if self.otaFile(cskSerFp, otaCmd, 1):
+                                otaSetDone = True
+                                otaStep = 1
+
+                        # if cskSerFp.getRegexResult().get("otaDownLoadDone", False):
+                        #     # 清除asr的正则结果
+                        #     asrSerFp.cleanRegexResultBuff()
+                        #     if self.breakPower == 2 and not breakPower:
+                        #         breakPower = True
+                        #         sleepTime = random.randint(10, 70)
+                        #         rebootThreadFp = threading.Thread(target=self.rebootThread,
+                        #                                           args=[sleepTime, cskSerFp, asrSerFp, ])
+                        #         rebootThreadFp.start()
+                        #     cskSerFp.clearSingleRegex("otaDownLoadDone")
+
+                        if cskSerFp.getRegexResult().get("otaDone", False) and not otaDone:
+                            otaStep = 2
+                            otaDone = True
+                            self.output.LOG_INFO(f"升级完成，将此轮ota升级剩余时间{otaTime}s 重置为10s，10s后开始进入下一轮测试")
+                            otaTime = 10
+                        if otaTime % 20 == 0:
+                            self.output.LOG_INFO(f"当前OTA还剩 {otaTime}s")
+                        # 检测当前是否有异常信息
+                        currentBootReason = cskSerFp.getRegexResult().get("bootReason", False)
+                        if currentBootReason:
+                            cskRebootTimes += 1
+                            if currentBootReason not in ['POWER|HWPIN 0x03', 'REBOOT 0x60']:
+                                self.output.LOG_ERROR(
+                                    f"########## 运行{runtimes}次当前csk异常重启：{currentBootReason}##########")
+                            cskSerFp.clearSingleRegex("bootReason")
+                    except Exception as e:
+                        self.output.LOG_ERROR(f"测试出现异常{str(e)}")
+                    time.sleep(1)
+                    otaTime -= 1
+                # self.cmdShell(asrSerFp, "reboot")
+                time.sleep(5)
+            except Exception as e:
+                self.output.LOG_ERROR(f"测试出现异常{str(e)}")
+            # 检查当前lsboot 是否升级
+            upgradeFailList = []
+            for bootOtaTag in ["bootSet1", "bootSet2", "bootSet3", "bootSet4"]:
+                tempBootTag = asrSerFp.getRegexResult().get(bootOtaTag, False)
+                if not tempBootTag:
+                    upgradeFailList.append(bootOtaTag)
+            if upgradeFailList:
+                self.output.LOG_INFO(f"当前测试第{runtimes}次结束,检测到boot升级存在异常，异常阶段：{','.join(upgradeFailList)}")
+            self.output.LOG_INFO(f"当前测试第{runtimes}次结束,csk 重启{cskRebootTimes}次")
+            time.sleep(10)
+            runtimes += 1
+
     def otaLoopSameAction(self):
         runtimes = 0
         self.output.LOG_INFO(f"当前测试类型为低版本升级到高版本，再烧录回低版本")
         if not self.initSerDevice() or not self.gpioHandle.dvOpen():
             self.output.LOG_ERROR(f"退出当前测试")
-
         # timeMonitor = TimerThread()
         # timeMonitor.start()
         # self.serFpPools.update({"timeMonitor": timeMonitor})
         tempVerifyAsrBoot = 0
         while True:
+            exceptionMsg = ''
+            otaStep = 0
             try:
                 # 获取当前可用的串口句柄，可读取对应的串口数据、和配置文件中需要正则的内容
                 asrSerFp = self.serFpPools.get("asrLog", "")
@@ -698,8 +807,11 @@ class crazyOTA:
                 # 清除当前句柄里正则到的信息为空
                 cskSerFp.cleanRegexResultBuff()
                 asrSerFp.cleanRegexResultBuff()
-                self.output.LOG_INFO(f"\t^^^^^^^^^^CURRENT TESTTIMES {runtimes} START^^^^^^^^^^")
-                time.sleep(3)
+                cskSerFp.clearBootReasonList()
+
+                self.output.LOG_INFO(f"\t\t^^^^^^^^^^CURRENT TESTTIMES {runtimes} START^^^^^^^^^^")
+                time.sleep(5)
+                self.cmdShell(asrSerFp, "listen flash setloglev 4")
                 # 清除当前asr 相关信息
                 if self.flashClear:
                     self.output.LOG_INFO(f"testTime {runtimes} :开始清理 asr  flash info")
@@ -716,13 +828,10 @@ class crazyOTA:
                 # 烧录完成后，更新当前句柄库里的对应句柄，获取最新的串口句柄。
                 asrSerFp = self.serFpPools.get("asrLog", "")
                 cskSerFp = self.serFpPools.get("cskApLog", "")
-                # self.cmdShell(asrSerFp, "reboot")
-                # time.sleep(5)
-                # 获取asr和csk 的build信息
                 asrInfo = asrSerFp.getRegexResult().get("buildInfo", '')
                 cskInfo = cskSerFp.getRegexResult().get("buildInfo", '')
-                self.output.LOG_ERROR(f"烧录后 asr 版本信息 :{asrInfo}")
-                self.output.LOG_ERROR(f"烧录后 csk 版本信息 :{cskInfo}")
+                self.output.LOG_INFO(f"烧录后 asr 版本信息 :{asrInfo}")
+                self.output.LOG_INFO(f"烧录后 csk 版本信息 :{cskInfo}")
                 buildInfo = cskSerFp.getRegexResult().get("buildInfo", '')
                 otaCmd = self.otaCmd
                 if otaCmd == "burn":
@@ -734,6 +843,11 @@ class crazyOTA:
                 otaTime = 400
                 otaSetDone = False
                 cmdRetryTime = 0
+                cskRebootTimes = 0
+                breakPower = False
+                otaDone = False
+                breakPowerTime = 0
+
                 while otaTime > 0:
                     try:
                         # 当ota 命令未设置成功或者重复次数少于20次继续设置ota的升级命令
@@ -745,22 +859,47 @@ class crazyOTA:
                             self.output.LOG_INFO(f"当前build信息{buildInfo},命令{otaCmd}")
                             if self.otaFile(cskSerFp, otaCmd, 1):
                                 otaSetDone = True
+                                otaStep = 1
 
                         if cskSerFp.getRegexResult().get("otaDownLoadDone", False):
-                            if self.breakPower == 2:
+                            # 清除asr的正则结果
+                            otaStep = 2
+                            asrSerFp.cleanRegexResultBuff()
+                            cskSerFp.clearSingleRegex("otaDownLoadDone")
+                            if self.breakPower == 2 and not breakPower:
+                                breakPower = True
                                 sleepTime = random.randint(10, 70)
-                                self.output.LOG_INFO(f'testTime {runtimes} : 等待{sleepTime}s 后重启设备')
-                                time.sleep(sleepTime)
-                                self.rebootDevice()
-                                otaTime -= sleepTime
-                                cskSerFp.cleanRegexResultBuff()
+                                breakPowerTime = otaTime - sleepTime
+                                self.output.LOG_INFO(f"当前下载已完成，预计 {sleepTime} s后重启设备")
+                                rebootThreadFp = threading.Thread(target=self.rebootThread,
+                                                                         args=[sleepTime, cskSerFp, asrSerFp, ])
+                                rebootThreadFp.start()
+                                # time.sleep(sleepTime)
+                                # self.output.LOG_INFO(f"开始重启当前设备")
+                                # cskSerFp.cleanRegexResultBuff()
+                                # self.rebootDevice()
+                                # otaTime -= sleepTime
 
-                        if cskSerFp.getRegexResult().get("otaDone", False):
-                            self.output.LOG_INFO(f"升级完成，将{otaTime} 重置为10s，10后开始进入烧录")
-                            time.sleep(10)
-                            otaTime = 0
-                        if otaTime % 10 == 0:
+                        # if breakPower and otaTime == breakPowerTime:
+                        #     self.output.LOG_INFO(f"开始重启当前设备")
+                        #     cskSerFp.cleanRegexResultBuff()
+                        #     self.rebootDevice()
+                        #     otaTime -= 10
+                        if cskSerFp.getRegexResult().get("otaDone", False) and not otaDone:
+                            otaStep = 3
+                            otaDone = True
+                            self.output.LOG_INFO(f"升级完成，将此轮ota升级剩余时间{otaTime}s 重置为10s，10s后开始进入下一轮测试")
+                            otaTime = 10
+                        if otaTime % 20 == 0:
                             self.output.LOG_INFO(f"当前OTA还剩 {otaTime}s")
+                        # 检测当前是否有异常信息
+                        currentBootReason = cskSerFp.getRegexResult().get("bootReason", False)
+                        if currentBootReason:
+                            cskRebootTimes += 1
+                            if currentBootReason not in ['POWER|HWPIN 0x03', 'REBOOT 0x60']:
+                                self.output.LOG_ERROR(
+                                    f"########## 运行{runtimes}次当前csk异常重启：{currentBootReason}##########")
+                            cskSerFp.clearSingleRegex("bootReason")
                     except Exception as e:
                         self.output.LOG_ERROR(f"测试出现异常{str(e)}")
                     time.sleep(1)
@@ -769,7 +908,23 @@ class crazyOTA:
                 time.sleep(5)
             except Exception as e:
                 self.output.LOG_ERROR(f"测试出现异常{str(e)}")
-            time.sleep(1)
+                traceback.print_exc()
+            # 检查当前lsboot 是否升级
+            upgradeFailList = []
+            for bootOtaTag in ["bootSet1", "bootSet2", "bootSet3", "bootSet4"]:
+                tempBootTag = asrSerFp.getRegexResult().get(bootOtaTag, False)
+                if not tempBootTag:
+                    upgradeFailList.append(bootOtaTag)
+            if upgradeFailList:
+                self.output.LOG_ERROR(f"当前测试第{runtimes}次结束,检测到boot升级存在异常，异常阶段：{','.join(upgradeFailList)}")
+            else:
+                otaStep = 4
+            cskBootReasonList = cskSerFp.getBootReasonList()
+            tempBootReasonTag = ' -==- '.join(cskBootReasonList)
+            self.output.LOG_INFO(f"csk 重启原因如下 {tempBootReasonTag}")
+            self.output.LOG_INFO(
+                f"\t\t\t\t ********** 当前测试第{runtimes}次结束,csk 重启{len(cskBootReasonList)}次,ota 执行最后阶段 {otaStep} **********\n\n")
+            time.sleep(10)
             runtimes += 1
 
     def run(self):
@@ -777,14 +932,19 @@ class crazyOTA:
             if self.testType == "onlyBurn":
                 # 只烧录指定固件
                 self.onlyBurn()
+                # testTime = 20
+                # while testTime > 0:
+                #     self.output.LOG_INFO(f"当前烧录第 {20 - testTime} 次")
+                #     self.onlyBurn()
+                #     testTime -= 1
             elif self.testType == "burnLOtaH":
                 # 烧录指定固件，ota升级到目标固件
                 self.otaLoopSameAction()
-            elif self.testType == "otaLoop1":
-                # 循环ota升级某一个固定版本
+            elif self.testType == "burnLOtaM2H":
+                # 烧录到指定版本，ota升级某一个固定版本，在升级到最终版本
                 pass
-            elif self.testType == "otaLoop2":
-                # 循环ota升级某两个固定版本，来回升级
+            elif self.testType == "onlyOta":
+                # 循环ota升级某一个固定版本，循环升级
                 pass
             else:
                 pass
@@ -802,11 +962,11 @@ if __name__ == '__main__':
     parser.add_argument('-f', "--file", type=str, default="", help="测试配置文件路径")
     parser.add_argument('-s', "--show", type=int, default=0, help="显示当前设备号,0:不显示,1:显示")
     parser.add_argument('-p', "--project", type=str, default="Midea_Offline_CSK6011B_WB01", help="当前测试的类型")
-    parser.add_argument('-v', "--version", type=str, default="1.0.49", help="当前测试的类型")
+    parser.add_argument('-v', "--version", type=str, default="1.0.26", help="当前测试的类型")
     parser.add_argument('-t', "--testType", type=str, default="burnLOtaH", help="当前测试的类型")
     parser.add_argument('-b', "--breakPower", type=int, default=0, help="当前随机断电阶段。0:不断电,1:下载断电,2:升级断电,3:下载断网,4:下载断电断网")
     parser.add_argument('-c', "--flashClear", type=int, default=0, help="asr升级信息清除。0:不不清除,1:清除")
-    parser.add_argument('-o', "--otaVersion", type=str, default=r"1.0.49", help="当前测试的类型")
+    parser.add_argument('-o', "--otaVersion", type=str, default=r"1.0.52", help="当前测试的类型")
     parser.add_argument('-l', "--lable", type=str, default="测试一下", help="当前测试的标注，标记当前的测试内容")
 
     args = parser.parse_args()

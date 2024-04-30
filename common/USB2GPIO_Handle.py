@@ -143,6 +143,32 @@ def decimal_to_four_hex(decimal_number):
     return "0x" + hex_string.zfill(4)  # 如果不足4位，用0填充
 
 
+def dec2hexStr(PinMask):
+    return hex(PinMask)[2:].zfill(4)
+
+
+def pinMaskSet(DevFp, pinNum, PuPd):
+    PinMask = pinNumMap[pinNum]
+    GPIO_SetOutput(DevFp, 0xFFFF, 0)
+    if PuPd:
+        GPIO_SetOutput(DevFp, PinMask, 1)
+        GPIO_Write(DevFp, PinMask, PinMask)
+    else:
+        GPIO_SetOutput(DevFp, PinMask, 2)
+        GPIO_Write(DevFp, PinMask, 0x0000)
+    time.sleep(1)
+    currentPinMaskValue = checkPinMaskLevel(DevFp, pinNum)
+    if PuPd:
+        if dec2hexStr(PinMask) == currentPinMaskValue:
+            return "高电平设置成功"
+        else:
+            return "高电平设置失败"
+    else:
+        if currentPinMaskValue != '0000':
+            return "低电平设置失败"
+        return "低电平设置成功"
+
+
 def closeDev(DevFp):
     ret = USB_CloseDevice(DevFp)
     if ret:
@@ -170,10 +196,10 @@ class usb2xxGpioHandle:
             self.output.LOG_ERROR(f"usb2xxx {self.deviceNum} 设备打开失败，请检查 ")
             return False
         # 设置P0-P15引脚为输出模式，可以通过调用GPIO_Write函数将指定引脚设置为高电平或者低电平。
-        GPIO_SetOutput(self.deviceNum, 0xFFFF, 0)
+        # GPIO_SetOutput(self.deviceNum, 0xFFFF, 0)
         # 设置指定引脚为低电平P0-P7为低电平，P8-P15为高电平
-        setP0_7LP8_15H(self.deviceNum)
-        self.resetRetry = 3
+        # setP0_7LP8_15H(self.deviceNum)
+        self.resetRetry = 10
         return True
 
     def pinValueCheck(self, pinNum):
@@ -223,33 +249,34 @@ class usb2xxGpioHandle:
         else:
             self.output.LOG_ERROR(f"\t\t**********P{pinNum} 脚控制成功**********")
             return True
-        #
-        #
-        #
-        #
-        #
-        # PinMask = pinNum2PinMask(pinNum)
-        # print(PinMask)
-        # pValueBefore = self.pinValueCheck(pinNum)
-        # if PuPd:
-        #     GPIO_SetOutput(self.deviceNum, PinMask, 1)
-        #     time.sleep(0.1)
-        #     self.output.LOG_INFO(f"开始拉高 P{pinNum}引脚")
-        #     GPIO_Write(self.deviceNum, PinMask, PinMask)
-        #     time.sleep(0.2)
-        #     pValueAfter = self.pinValueCheck(pinNum)
-        # else:
-        #     GPIO_SetOutput(self.deviceNum, PinMask, 2)
-        #     time.sleep(0.1)
-        #     self.output.LOG_INFO(f"开始拉低 P{pinNum}引脚")
-        #     GPIO_Write(self.deviceNum, PinMask, 0x00)
-        #     time.sleep(0.2)
-        #     pValueAfter = self.pinValueCheck(pinNum)
-        # if pValueBefore != pValueAfter:
-        #     self.output.LOG_ERROR(f"\t\t**********P{pinNum} 脚控制成功**********")
-        #     return True
-        # self.output.LOG_ERROR(f"\t\t**********P{pinNum} 脚控制失败**********")
-        # return False
+
+    def setOnePinMaskPuPd(self, pinNum, PuPd):
+        PinMask = pinNum2PinMask(pinNum)
+        checkValueBefore = checkPinMaskLevel(self.deviceNum, pinNum)
+        self.output.LOG_INFO(f"检查P{pinNum}引脚初始值为：{checkValueBefore}")
+
+        if PuPd:
+            self.output.LOG_INFO(f"开始拉高 P{pinNum}引脚")
+            GPIO_SetOutput(self.deviceNum, PinMask, 1)
+            time.sleep(0.1)
+            GPIO_Write(self.deviceNum, PinMask, PinMask)
+        else:
+            self.output.LOG_INFO(f"开始拉低 P{pinNum}引脚")
+            GPIO_SetOutput(self.deviceNum, PinMask, 2)
+            time.sleep(0.1)
+            GPIO_Write(self.deviceNum, PinMask, 0x0000)
+        time.sleep(0.1)
+        checkValueAfter = checkPinMaskLevel(self.deviceNum, pinNum)
+        self.output.LOG_INFO(f"检查P{pinNum}引脚操作后值为：{checkValueAfter}")
+        if PuPd:
+            if checkValueAfter != dec2hexStr(PinMask):
+                self.output.LOG_ERROR(f"\t\t**********P{pinNum} 脚拉高控制失败**********")
+                return False
+        else:
+            if checkValueAfter != '0000':
+                self.output.LOG_ERROR(f"\t\t**********P{pinNum} 脚拉低控制失败**********")
+                return False
+        return True
 
     def usb2xxReset(self):
         GPIO_SetOutput(self.deviceNum, 0xFFFF, 0)
@@ -272,10 +299,12 @@ class usb2xxGpioHandle:
 
 if __name__ == '__main__':
     showCurrentDev()
-    sys.exit()
+    # sys.exit()
     # 设备号
-    devNum = 553650634
+    devNum = 822086498
     # wb01 的ser 脚。默认低电平，拉高进烧录
+    print(pinMaskSet(devNum, 12, 0))
+    sys.exit()
     wb01SelPinNum = 0
     # csk 的boot脚。默认高电平，拉低进烧录
     cskBootPinNum = 8
@@ -291,15 +320,14 @@ if __name__ == '__main__':
     setPinLevel(devNum, cskBootPinNum, 0)
     time.sleep(0.1)
     setPinLevel(devNum, wb01SelPinNum, 1)
-
+    time.sleep(1)
     # TODO
     # 烧录文件中
-    input()
+    # input()
     # 烧录完成后恢复正常引脚
     setPinLevel(devNum, cskBootPinNum, 1)
     time.sleep(0.1)
     setPinLevel(devNum, wb01SelPinNum, 0)
-
     # setP0_7LP8_15H(devNum)
     closeDev(devNum)
     sys.exit()

@@ -4,18 +4,58 @@ import csv
 import json
 import os, re, sys
 import string
-
 import pyaudio, wave
 import urllib3
 import random
-
-# 读配置文件
+import chardet
+from chardet.universaldetector import UniversalDetector
 import serial
-
 import serial.tools.list_ports
 
 
-# 遍历文件夹
+# 获取文件编码类型
+def get_encoding(file):
+    # 二进制方式读取，获取字节数据，检测类型
+    with open(file, 'rb') as f:
+        data = f.read()
+        return chardet.detect(data)['encoding']
+
+
+def get_encode_info(file):
+    with open(file, 'rb') as f:
+        detector = UniversalDetector()
+        for line in f.readlines():
+            detector.feed(line)
+            if detector.done:
+                break
+        detector.close()
+        return detector.result['encoding']
+
+
+def read_file(file):
+    with open(file, 'rb') as f:
+        return f.read()
+
+
+def write_file(content, file):
+    with open(file, 'wb') as f:
+        f.write(content)
+
+
+def convert_encode2utf8(file, original_encode, des_encode):
+    file_content = read_file(file)
+    file_decode = file_content.decode(original_encode, 'ignore')
+    file_encode = file_decode.encode(des_encode)
+    write_file(file_encode, file)
+
+
+def encodeFile2Utf8(fileName):
+    encodeInfo = get_encode_info(fileName)
+    if encodeInfo != 'utf-8':
+        print(f"修改{fileName}文件编码格式为utf-8")
+        convert_encode2utf8(fileName, encodeInfo, 'utf-8')
+
+
 def traversalFile(rootdir):
     '''
     遍历指定文件夹下的所有文件，返回一个文件路径列表
@@ -115,6 +155,7 @@ def load_json(file):
     :param file: file name
     :return: python dict
     """
+    encodeFile2Utf8(file)
     with open(file, "r+", encoding="utf-8") as fp:
         content = json.load(fp)
     return content
