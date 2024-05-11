@@ -278,6 +278,16 @@ def fileIsExists(file_path):
         print(f"{file_path} 文件不存在！")
         return False
 
+
+def pad_numbers(version):
+    """
+    填充版本号信息4.0.7->04.00.07
+    """
+    parts = version.split('.')
+    padded_parts = [str(int(part)).zfill(2) for part in parts]
+    return '.'.join(padded_parts)
+
+
 # print(Random_time("[1-5]"))
 # random_char = generate_random_char()
 # print("随机字符：", random_char)

@@ -1,0 +1,90 @@
+{
+  "projectInfo": "美的空调TH001",
+  "usb2xxNum":553650600,
+  "flashClear":1,
+  "pduInfo": {
+    "pduDeviceNum": 8,
+    "pduWifiNum": 8,
+    "pduIp": "10.3.37.30"
+  },
+  "deviceListInfo":{
+    "cskApLog": {
+      "type": "串口",
+      "port": "COM3",
+      "baudRate": 115200,
+      "serial_data_type": "string",
+      "regex": {
+        "otaStart":".*ota_downloader\\] (http.*) len.*",
+        "otaDownloadProgress": ".*ota_downloader\\] OTA download progress (.*)% \\[.*",
+        "otaDownLoadDone": ".*ota_downloader] (OTA download complete)",
+        "cskInstallStart": ".*match file(ota/respak.bin).*",
+        "otaDone": ".*(program partab done)",
+        "reboot": ".*(Copyright).*",
+        "cskVersion": ".*AP Version: .*.(\\d{2}\\.\\d{2}\\.\\d{2}?)",
+        "bootReason": ".*Boot Reason: (.*)",
+        "netConnect": ".*(MSpeech ONLINE).*",
+        "asrKw": ".*ncmThreshold.*keyword\":\"(.*)\",\"nDelayFrame.*",
+        "buildInfo": ".*Build Info:.*_(.*)",
+        "rebootInitDone": ".*(== Running Config ===).*"
+      }
+    },
+    "cskBurn":{
+      "burnPort": "COM5",
+      "baudRate": 115200,
+      "pinNum": 8,
+      "ap":{
+        "size": 651088,
+        "startAddr": "0x00045000",
+        "md5Base": "1f365f00396cfac50ea2c26057166afe"
+      },
+      "cp":{
+        "size": 3816032,
+        "startAddr": "0x00200000",
+        "md5Base": "799a7ba2c98e892b700a2ec3a494a042"
+      },
+      "tone":{
+        "size": 1094529,
+        "startAddr": "0x00680000",
+        "md5Base": "c4baf2a2cbdb8bd484654817de5c7618"
+      },
+      "boot":{
+        "size": 82708,
+        "startAddr": "0x00000000",
+        "md5Base": "80e198ac490366efe2d2898423b3f377"
+      }
+    },
+    "asrLog": {
+      "type": "串口",
+      "port": "COM4",
+      "baudRate": 115200,
+      "pinNum": 0,
+      "serial_data_type": "string",
+      "regex": {
+        "lsbootVer":".*lsboot_ver=(.*)",
+        "otaUrl": ".*ota_url=(.*).bin",
+        "otaMd5": ".*ota_md5=(.*)",
+        "buildInfo": ".*Build Info:.*_(.*)",
+        "cskBootReason": ".*Boot Reason: (.*)",
+        "bootSet1": ".*(no csk boot ver info & has ota info)",
+        "bootSet2": ".*(rollback update csk boot)",
+        "bootSet3": ".*(rollback csk boot .* success)",
+        "bootSet4": ".*(put csk lsboot version success)",
+        "rollback": ".*(listen_client_rollback_csk).*",
+        "reset": ".*(reset csk boot & reset pin)"
+      }
+    }
+  },
+    "cskCmdList": {
+    "reboot": "reboot",
+    "version": "version",
+    "loglevel": "flash.setloglev 4",
+    "clearUrl": "flash.clear ota_test_url",
+    "clearMd5": "flash.clear ota_test_md5",
+    "clearLoop": "flash.clear ota_loop"
+  },
+  "asrCmdList": {
+    "reboot": "reboot"
+  },
+  "clearListCsk": ["lsboot_ver", "ota_url", "ota_md5", "ota_step"],
+  "clearListAsr": ["lsboot_ver", "ota_url", "ota_md5", "bootcfg_num"]
+}

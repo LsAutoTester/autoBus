@@ -2,6 +2,10 @@
 __author__ = "bszheng"
 __date__ = "2024/4/6"
 __version__ = "1.0"
+
+import sys
+import time
+
 """
 支持功能:
 1.脚本主要功能美的项目的设备自动烧录
@@ -20,7 +24,7 @@ import threading
 import random
 from openpyxl.cell.cell import ILLEGAL_CHARACTERS_RE
 from common.output_log import output_log
-from common.Common_Func import get_serial, load_json, createdirs, fileIsExists
+from common.Common_Func import get_serial, load_json, createdirs, fileIsExists, pad_numbers
 import common.pdusnmp as pdu
 from common.USB2GPIO_Handle import *
 from common.usb_device import *
@@ -288,6 +292,7 @@ class crazyOTA:
         self.testLable = self.testArgs.lable
         self.burnVersion = self.testArgs.version
         self.otaVersion = self.testArgs.otaVersion
+        self.runTimes = self.testArgs.runTimes
         self.mideaOtaInfo = self.otaInfo.get("mideaOtaInfo", {})
         self.otaCmd = self.mideaOtaInfo.get(self.otaVersion, "")
 
@@ -847,7 +852,8 @@ class crazyOTA:
                 breakPower = False
                 otaDone = False
                 breakPowerTime = 0
-
+                # JJ空调烧录完成后会更新otaDone的正则内容，故ota前清理掉
+                cskSerFp.clearSingleRegex("otaDone")
                 while otaTime > 0:
                     try:
                         # 当ota 命令未设置成功或者重复次数少于20次继续设置ota的升级命令
@@ -860,7 +866,6 @@ class crazyOTA:
                             if self.otaFile(cskSerFp, otaCmd, 1):
                                 otaSetDone = True
                                 otaStep = 1
-
                         if cskSerFp.getRegexResult().get("otaDownLoadDone", False):
                             # 清除asr的正则结果
                             otaStep = 2
@@ -872,7 +877,7 @@ class crazyOTA:
                                 breakPowerTime = otaTime - sleepTime
                                 self.output.LOG_INFO(f"当前下载已完成，预计 {sleepTime} s后重启设备")
                                 rebootThreadFp = threading.Thread(target=self.rebootThread,
-                                                                         args=[sleepTime, cskSerFp, asrSerFp, ])
+                                                                  args=[sleepTime, cskSerFp, asrSerFp, ])
                                 rebootThreadFp.start()
                                 # time.sleep(sleepTime)
                                 # self.output.LOG_INFO(f"开始重启当前设备")
@@ -909,6 +914,8 @@ class crazyOTA:
             except Exception as e:
                 self.output.LOG_ERROR(f"测试出现异常{str(e)}")
                 traceback.print_exc()
+            self.cmdShell(cskSerFp, "version")
+            time.sleep(1)
             # 检查当前lsboot 是否升级
             upgradeFailList = []
             for bootOtaTag in ["bootSet1", "bootSet2", "bootSet3", "bootSet4"]:
@@ -922,10 +929,19 @@ class crazyOTA:
             cskBootReasonList = cskSerFp.getBootReasonList()
             tempBootReasonTag = ' -==- '.join(cskBootReasonList)
             self.output.LOG_INFO(f"csk 重启原因如下 {tempBootReasonTag}")
+            currentCskVersion = cskSerFp.getRegexResult().get("cskVersion", "")
+            # 将版本号从4.00.10 修改为4.0.10，方便比较
+            otaRes = '升级成功'
+            self.output.LOG_INFO(f"currentCskVersion: {currentCskVersion}, otaVersion: {self.otaVersion}")
+            if currentCskVersion != pad_numbers(self.otaVersion) or otaStep < 3:
+                otaRes = '升级失败'
             self.output.LOG_INFO(
-                f"\t\t\t\t ********** 当前测试第{runtimes}次结束,csk 重启{len(cskBootReasonList)}次,ota 执行最后阶段 {otaStep} **********\n\n")
+                f"\t\t\t\t ********** 当前测试第{runtimes}次结束,csk 重启{len(cskBootReasonList)}次,当前版本信息: {currentCskVersion},OTA{otaRes},ota 执行最后阶段 {otaStep} **********\n\n")
             time.sleep(10)
             runtimes += 1
+            if self.runTimes and self.runTimes == runtimes:
+                self.output.LOG_INFO(f"\t\tRunTimes {runtimes}, OTA Test Finish!!!")
+                break
 
     def run(self):
         try:
@@ -967,6 +983,7 @@ if __name__ == '__main__':
     parser.add_argument('-b', "--breakPower", type=int, default=0, help="当前随机断电阶段。0:不断电,1:下载断电,2:升级断电,3:下载断网,4:下载断电断网")
     parser.add_argument('-c', "--flashClear", type=int, default=0, help="asr升级信息清除。0:不不清除,1:清除")
     parser.add_argument('-o', "--otaVersion", type=str, default=r"1.0.52", help="当前测试的类型")
+    parser.add_argument('-r', "--runTimes", type=int, default=200, help="当前测试次数")
     parser.add_argument('-l', "--lable", type=str, default="测试一下", help="当前测试的标注，标记当前的测试内容")
 
     args = parser.parse_args()
@@ -983,3 +1000,4 @@ if __name__ == '__main__':
     # filePath = os.path.join("Z:\\","Firmware","Midea_Offline_CSK6011B_WB01","V1.0.26",
     # "Midea_Offline_WB01_3IN1_1.0.26.bin") filePath_ = os.path.join("Z:\\","Firmware","Midea_Offline_CSK6011B_WB01")
     # shutil.copy(filePath,filePath_)
+# python otaPartitaForMidea.py -f deviceInfoJJ1.json -p Midea_AC_CSK6_WB01 -v 4.0.8 -t burnLOtaH -b 0 -o 4.0.9 -c 0 -r 1 -l midea-child-ota8-9
