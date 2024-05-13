@@ -705,6 +705,9 @@ class crazyOTA:
         try:
             self.output.LOG_INFO(f" {effectTime}s 后重启设备")
             time.sleep(effectTime)
+            if cskSerFp.getRegexResult().get("otaDone", False):
+                self.output.LOG_INFO(f"设备升级完成，取消本次升级中断电操作")
+                return 
             cskSerFp.cleanRegexResultBuff()
             self.rebootDevice()
         except Exception as e:
@@ -842,7 +845,7 @@ class crazyOTA:
                 if otaCmd == "burn":
                     runtimes += 1
                     continue
-                time.sleep(4)
+                time.sleep(5)
                 # 执行命令
                 self.cmdShell(asrSerFp, "listen flash show")
                 otaTime = 400
