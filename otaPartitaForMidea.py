@@ -884,7 +884,9 @@ class crazyOTA:
                                 # cskSerFp.cleanRegexResultBuff()
                                 # self.rebootDevice()
                                 # otaTime -= sleepTime
-
+                            if otaTime < 70:
+                                self.output.LOG_INFO(f"重置ota本轮测试时间，由于下载耗费时间较多，70s可能不足以csk升级完成，故本轮测试延长至90s.")
+                                otaTime = 90
                         # if breakPower and otaTime == breakPowerTime:
                         #     self.output.LOG_INFO(f"开始重启当前设备")
                         #     cskSerFp.cleanRegexResultBuff()
