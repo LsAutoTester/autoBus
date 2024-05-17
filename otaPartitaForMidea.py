@@ -707,7 +707,7 @@ class crazyOTA:
             time.sleep(effectTime)
             if cskSerFp.getRegexResult().get("otaDone", False):
                 self.output.LOG_INFO(f"设备升级完成，取消本次升级中断电操作")
-                return 
+                return
             cskSerFp.cleanRegexResultBuff()
             self.rebootDevice()
         except Exception as e:
@@ -935,6 +935,10 @@ class crazyOTA:
             tempBootReasonTag = ' -==- '.join(cskBootReasonList)
             self.output.LOG_INFO(f"csk 重启原因如下 {tempBootReasonTag}")
             currentCskVersion = cskSerFp.getRegexResult().get("cskVersion", "")
+            if not currentCskVersion:
+                time.sleep(10)
+                self.cmdShell(cskSerFp, "version")
+                currentCskVersion = cskSerFp.getRegexResult().get("cskVersion", "")
             # 将版本号从4.00.10 修改为4.0.10，方便比较
             otaRes = '升级成功'
             self.output.LOG_INFO(f"currentCskVersion: {currentCskVersion}, otaVersion: {self.otaVersion}")
