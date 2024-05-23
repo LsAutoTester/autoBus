@@ -3,6 +3,7 @@ __author__ = "bszheng"
 __date__ = "2024/4/6"
 __version__ = "1.0"
 
+import hashlib
 import sys
 import time
 
@@ -41,6 +42,45 @@ TONE_ADDR_2 = 0x800000
 CSK_EMPTY_ADDR = 0x40000
 BAUD_RATE = 1500000
 
+
+
+# 随机生成16进制字符的二进制文件
+def generate_random_binary_file(file_path, size_in_bytes):
+    """
+    file_path:文件保存地址
+    size_in_bytes:文件大小如1K: 1024、1M: 1024*1024、16M: 1024*1024*16
+    """
+    with open(file_path, 'wb') as file:
+        file.write(os.urandom(size_in_bytes))
+
+
+def calculate_md5(file_path):
+    """
+    计算给定文件路径的MD5哈希值
+    :param file_path: 文件路径
+    :return: 文件的MD5哈希值（十六进制字符串）
+    """
+    # 创建一个md5 hash对象
+    hash_object = hashlib.md5()
+
+    # 确保文件存在
+    if not os.path.isfile(file_path):
+        raise FileNotFoundError(f"No such file or directory: '{file_path}'")
+
+        # 打开文件，以二进制模式读取
+    with open(file_path, 'rb') as file:
+        # 分块读取文件，每次读取4096字节（或更小的块），并更新哈希对象
+        while True:
+            # 读取4096个字节
+            data = file.read(4096)
+            if not data:
+                # 没有更多的数据，跳出循环
+                break
+                # 更新哈希对象
+            hash_object.update(data)
+
+            # 获取十六进制哈希字符串
+    return hash_object.hexdigest()
 
 # wb01 烧录命令
 def asrBootCmdGet(bootType, toolPath, bootPort, bootFile):
@@ -638,8 +678,12 @@ class crazyOTA:
                     asrBurnRes = self.asrBurn()
                 if not cskBurnRes:
                     cskBurnRes = self.cskBurn()
-            if cskBurnRes and asrBurnRes:
-                break
+            if burnType == "all":
+                if cskBurnRes and asrBurnRes:
+                    break
+            elif burnType == "csk":
+                if cskBurnRes:
+                    break
             retry_times -= 1
             self.output.LOG_INFO(f"当前烧录失败，还剩{retry_times}次重试")
 
@@ -952,6 +996,11 @@ class crazyOTA:
                 self.output.LOG_INFO(f"\t\tRunTimes {runtimes}, OTA Test Finish!!!")
                 break
 
+    def burnFileAndFlashCheck(self):
+        self.cskBurnFile = os.path.join(self.resultFolder, "burnFile.bin")
+        while True:
+            self.onlyBurn()
+
     def run(self):
         try:
             if self.testType == "onlyBurn":
@@ -970,6 +1019,9 @@ class crazyOTA:
                 pass
             elif self.testType == "onlyOta":
                 # 循环ota升级某一个固定版本，循环升级
+                pass
+            elif self.testType == "flashCheck":
+
                 pass
             else:
                 pass

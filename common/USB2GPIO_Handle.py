@@ -302,9 +302,11 @@ if __name__ == '__main__':
     # sys.exit()
     # 设备号
     devNum = 822086498
+
+    devNum = 553650600
     # wb01 的ser 脚。默认低电平，拉高进烧录
-    print(pinMaskSet(devNum, 12, 0))
-    sys.exit()
+    # print(pinMaskSet(devNum, , 0))
+    # sys.exit()
     wb01SelPinNum = 0
     # csk 的boot脚。默认高电平，拉低进烧录
     cskBootPinNum = 8
@@ -312,10 +314,10 @@ if __name__ == '__main__':
     if not ret:
         print(f"设备{devNum}打开失败")
     # 设置P0-P15引脚为输出模式，可以通过调用GPIO_Write函数将指定引脚设置为高电平或者低电平。
-    GPIO_SetOutput(devNum, 0xFFFF, 0)
+    # GPIO_SetOutput(devNum, 0xFFFF, 0)
     # 设置指定引脚为低电平P0-P7为低电平，P8-P15为高电平
-    setP0_7LP8_15H(devNum)
-    time.sleep(1)
+    # setP0_7LP8_15H(devNum)
+    # time.sleep(1)
     # 设置boot和ser进入烧录模式
     setPinLevel(devNum, cskBootPinNum, 0)
     time.sleep(0.1)
@@ -323,7 +325,7 @@ if __name__ == '__main__':
     time.sleep(1)
     # TODO
     # 烧录文件中
-    # input()
+    input("开始烧录")
     # 烧录完成后恢复正常引脚
     setPinLevel(devNum, cskBootPinNum, 1)
     time.sleep(0.1)

@@ -1,6 +1,6 @@
 {
   "projectInfo": "美的空调单麦挂机007",
-  "usb2xxNum":553650634,
+  "usb2xxNum":822086498,
   "flashClear":1,
   "pduInfo": {
     "pduDeviceNum": 8,
@@ -10,7 +10,7 @@
   "deviceListInfo":{
     "cskApLog": {
       "type": "串口",
-      "port": "COM65",
+      "port": "COM46",
       "baudRate": 115200,
       "serial_data_type": "string",
       "regex": {
@@ -29,7 +29,7 @@
       }
     },
     "cskBurn":{
-      "burnPort": "COM63",
+      "burnPort": "COM53",
       "baudRate": 115200,
       "pinNum": 8,
       "ap":{
@@ -55,7 +55,7 @@
     },
     "asrLog": {
       "type": "串口",
-      "port": "COM66",
+      "port": "COM48",
       "baudRate": 115200,
       "pinNum": 0,
       "serial_data_type": "string",
@@ -64,11 +64,13 @@
         "otaUrl": ".*ota_url=(.*).bin",
         "otaMd5": ".*ota_md5=(.*)",
         "buildInfo": ".*Build Info:.*_(.*)",
-        "asrBootReason": ".*(no csk boot ver info & has ota info)",
+        "cskBootReason": ".*Boot Reason: (.*)",
         "bootSet1": ".*(no csk boot ver info & has ota info)",
         "bootSet2": ".*(rollback update csk boot)",
-        "bootSet3": ".*(rollback csk boot 1.8.1.1002 success)",
-        "bootSet4": ".*(put csk lsboot version success)"
+        "bootSet3": ".*(rollback csk boot .* success)",
+        "bootSet4": ".*(put csk lsboot version success)",
+        "rollback": ".*(listen_client_rollback_csk).*",
+        "reset": ".*(reset csk boot & reset pin)"
       }
     }
   },
